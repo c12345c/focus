@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZenFocus - 沉浸式四象限（含编辑功能）</title>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <style>
+    /* 完美保留你原有的 CSS 变量和样式 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #e8ede9; --fg: #3d4a3d; --card: rgba(200, 215, 200, 0.65);
+      --card-border: rgba(160, 180, 160, 0.3); --primary: #6b7c6b;
+      --primary-fg: #f5f7f5; --muted: #b5c4b5; --muted-fg: #5a6b5a;
+      --border: #c9d4c5; --q1: #8b9a82; --q2: #7a8f75; --q3: #a3b299; --q4: #bec9ba;
+      --cat-work: #5a7d6a; --cat-personal: #6b8b5a; --cat-study: #5a7d7d;
+      --cat-health: #4a7d5a; --cat-other: #6b7c6b;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
+      background: var(--bg); color: var(--fg); min-height: 100vh; padding: 1.5rem;
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+    .glass { background: var(--card); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--card-border); border-radius: 12px; }
+
+    header { text-align: center; margin-bottom: 2rem; }
+    .clock { font-size: 3rem; font-weight: 300; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
+    .date { color: var(--muted-fg); }
+
+    /* 操作栏 */
+    .action-bar { display: flex; justify-content: center; gap: 1rem; margin-bottom: 1rem; }
+    .btn-tool { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: white; cursor: pointer; color: var(--muted-fg); transition: 0.2s; }
+    .btn-tool:hover { background: var(--primary); color: white; }
+
+    /* 输入区 */
+    .input-area { padding: 1rem; margin-bottom: 1.5rem; }
+    .input-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .input-row input { flex: 1; min-width: 200px; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,0.5); outline: none; }
+    .input-row select, .input-row button { padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; }
+    .input-row button { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; }
+
+    /* 四象限 */
+    .quadrants { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    @media (max-width: 768px) { .quadrants { grid-template-columns: 1fr; } }
+    .quadrant { padding: 1rem; min-height: 200px; border-left: 4px solid var(--q1); }
+    .quadrant[data-quadrant="important"] { border-left-color: var(--q2); }
+    .quadrant[data-quadrant="urgent"] { border-left-color: var(--q3); }
+    .quadrant[data-quadrant="neither"] { border-left-color: var(--q4); }
+    .quadrant-header { display: flex; align-items: center; gap: 0.5rem; padding-bottom: 0.75rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); }
+    .count { margin-left: auto; font-size: 0.75rem; background: var(--muted); padding: 0.25rem 0.5rem; border-radius: 999px; }
+
+    /* 任务项 - 增加编辑样式 */
+    .task-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem; margin-bottom: 0.5rem; border-radius: 8px; background: rgba(255,255,255,0.4); cursor: grab; transition: all 0.2s; }
+    .task-item:hover { background: rgba(255,255,255,0.6); }
+    .task-item.completed { opacity: 0.5; }
+    .task-item.completed .task-text { text-decoration: line-through; }
+    
+    .edit-input { flex: 1; padding: 4px 8px; border: 1px solid var(--primary); border-radius: 4px; background: white; font-size: 1rem; color: var(--fg); }
+    
+    .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .cat-dot.work { background: var(--cat-work); }
+    .cat-dot.personal { background: var(--cat-personal); }
+    .cat-dot.study { background: var(--cat-study); }
+    .cat-dot.health { background: var(--cat-health); }
+    .cat-dot.other { background: var(--cat-other); }
+
+    .delete-btn { opacity: 0; background: none; border: none; color: var(--muted-fg); cursor: pointer; font-size: 1.2rem; transition: 0.2s; }
+    .task-item:hover .delete-btn { opacity: 1; }
+    .delete-btn:hover { color: #c44; }
+
+    /* 弹窗样式保留 */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 100; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--bg); border-radius: 16px; padding: 1.5rem; width: 90%; max-width: 500px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+    .report-area { background: white; padding: 1rem; border-radius: 8px; white-space: pre-wrap; margin: 1rem 0; max-height: 300px; overflow-y: auto; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌿 ZenFocus</h1>
+      <div class="clock" id="clock">00:00:00</div>
+      <div class="date" id="date"></div>
+    </header>
+
+    <div class="action-bar">
+      <button class="btn-tool" onclick="generateReport()">📊 本周总结</button>
+      <button class="btn-tool" onclick="showArchives()">📂 历史存档</button>
+    </div>
+
+    <div class="input-area glass">
+      <div class="input-row">
+        <input type="text" id="taskInput" placeholder="输入任务，双击列表文字可修改...">
+        <select id="quadrantSelect">
+          <option value="urgent-important">🔥 紧急且重要</option>
+          <option value="important">⭐ 重要不紧急</option>
+          <option value="urgent">⚡ 紧急不重要</option>
+          <option value="neither">🌿 不紧急不重要</option>
+        </select>
+        <select id="categorySelect">
+          <option value="work">工作</option>
+          <option value="personal">个人</option>
+          <option value="study">学习</option>
+          <option value="health">健康</option>
+          <option value="other">其他</option>
+        </select>
+        <button onclick="addTask()">+ 添加</button>
+      </div>
+    </div>
+
+    <div class="quadrants">
+      <div class="quadrant glass" data-quadrant="urgent-important">
+        <div class="quadrant-header"><span>🔥</span><h3>紧急且重要</h3><span class="count" id="count-urgent-important">0</span></div>
+        <div class="task-list" id="list-urgent-important"></div>
+      </div>
+      <div class="quadrant glass" data-quadrant="important">
+        <div class="quadrant-header"><span>⭐</span><h3>重要不紧急</h3><span class="count" id="count-important">0</span></div>
+        <div class="task-list" id="list-important"></div>
+      </div>
+      <div class="quadrant glass" data-quadrant="urgent">
+        <div class="quadrant-header"><span>⚡</span><h3>紧急不重要</h3><span class="count" id="count-urgent">0</span></div>
+        <div class="task-list" id="list-urgent"></div>
+      </div>
+      <div class="quadrant glass" data-quadrant="neither">
+        <div class="quadrant-header"><span>🌿</span><h3>不紧急不重要</h3><span class="count" id="count-neither">0</span></div>
+        <div class="task-list" id="list-neither"></div>
+      </div>
+    </div>
+
+    <footer id="footer" style="text-align: center; margin-top: 2rem; color: var(--muted-fg);"></footer>
+  </div>
+
+  <div class="modal-overlay" id="commonModal">
+    <div class="modal">
+      <h2 id="modalTitle">总结</h2>
+      <div class="report-area" id="modalContent"></div>
+      <div style="text-align: right;">
+        <button class="btn-tool" onclick="closeModal()">关闭</button>
+        <button id="saveArchiveBtn" class="btn-tool" style="background: var(--primary); color: white; display: none;" onclick="saveReportToArchive()">保存到存档</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'zenfocus-pro-data';
+    const CATEGORY_LABELS = { work: '工作', personal: '个人', study: '学习', health: '健康', other: '其他' };
+    
+    let store = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { tasks: [], archives: [] };
+
+    function saveStore() { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); }
+
+    // --- 实时时钟 ---
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleTimeString('zh-CN', { hour12: false });
+      document.getElementById('date').textContent = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // --- 任务操作 ---
+    function addTask() {
+      const input = document.getElementById('taskInput');
+      if (!input.value.trim()) return;
+      store.tasks.push({
+        id: Date.now().toString(),
+        text: input.value.trim(),
+        quadrant: document.getElementById('quadrantSelect').value,
+        category: document.getElementById('categorySelect').value,
+        completed: false,
+        createdAt: new Date().toISOString(),
+        doneAt: null
+      });
+      input.value = '';
+      saveStore();
+      render();
+    }
+
+    function toggleTask(id) {
+      const task = store.tasks.find(t => t.id === id);
+      if (task) {
+        task.completed = !task.completed;
+        task.doneAt = task.completed ? new Date().toISOString() : null;
+        saveStore();
+        render();
+      }
+    }
+
+    function deleteTask(id) {
+      if (confirm('确定删除这个任务吗？')) {
+        store.tasks = store.tasks.filter(t => t.id !== id);
+        saveStore();
+        render();
+      }
+    }
+
+    // --- 修改功能：进入编辑模式 ---
+    function enterEditMode(el, id) {
+      const task = store.tasks.find(t => t.id === id);
+      if (!task || task.completed) return;
+
+      const currentText = task.text;
+      const parent = el.parentElement;
+      const originalHTML = parent.innerHTML;
+
+      parent.innerHTML = `<input type="text" class="edit-input" value="${currentText.replace(/"/g, '&quot;')}">`;
+      const input = parent.querySelector('input');
+      input.focus();
+
+      const finishEdit = () => {
+        const newText = input.value.trim();
+        if (newText && newText !== currentText) {
+          task.text = newText;
+          saveStore();
+        }
+        render();
+      };
+
+      input.onblur = finishEdit;
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') finishEdit();
+        if (e.key === 'Escape') render();
+      };
+    }
+
+    // --- 周总结与归档 ---
+    function generateReport() {
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      
+      const doneTasks = store.tasks.filter(t => t.completed && new Date(t.doneAt) > oneWeekAgo);
+      
+      if (doneTasks.length === 0) {
+        alert("本周暂无完成的任务，继续加油！");
+        return;
+      }
+
+      let report = `📅 生成时间: ${new Date().toLocaleDateString()}\n`;
+      report += `✅ 本周完成任务: ${doneTasks.length} 项\n\n`;
+      
+      const grouped = {};
+      doneTasks.forEach(t => {
+        if(!grouped[t.category]) grouped[t.category] = [];
+        grouped[t.category].push(t.text);
+      });
+
+      for (let cat in grouped) {
+        report += `【${CATEGORY_LABELS[cat]}】\n- ${grouped[cat].join('\n- ')}\n\n`;
+      }
+
+      showModal("📊 本周完成总结", report, true);
+    }
+
+    function saveReportToArchive() {
+      const content = document.getElementById('modalContent').innerText;
+      store.archives.unshift({
+        date: new Date().toLocaleDateString(),
+        content: content
+      });
+      saveStore();
+      alert("存档成功！");
+      closeModal();
+    }
+
+    function showArchives() {
+      if (store.archives.length === 0) {
+        alert("暂无历史存档。");
+        return;
+      }
+      let content = store.archives.map(a => `--- ${a.date} ---\n${a.content}`).join('\n\n');
+      showModal("📂 历史总结归档", content, false);
+    }
+
+    // --- 弹窗控制 ---
+    function showModal(title, content, showSave) {
+      document.getElementById('modalTitle').innerText = title;
+      document.getElementById('modalContent').innerText = content;
+      document.getElementById('saveArchiveBtn').style.display = showSave ? 'inline-block' : 'none';
+      document.getElementById('commonModal').classList.add('show');
+    }
+
+    function closeModal() { document.getElementById('commonModal').classList.remove('show'); }
+
+    // --- 渲染渲染 ---
+    function render() {
+      const quads = ['urgent-important', 'important', 'urgent', 'neither'];
+      quads.forEach(q => {
+        const tasks = store.tasks.filter(t => t.quadrant === q);
+        document.getElementById(`count-${q}`).textContent = tasks.length;
+        const list = document.getElementById(`list-${q}`);
+        
+        list.innerHTML = tasks.map(t => `
+          <div class="task-item ${t.completed ? 'completed' : ''}" data-id="${t.id}">
+            <div style="cursor: pointer;" onclick="toggleTask('${t.id}')">
+              ${t.completed ? '✅' : '⬜'}
+            </div>
+            <div class="cat-dot ${t.category}"></div>
+            <div class="task-text" style="flex:1" ondblclick="enterEditMode(this, '${t.id}')">
+              ${t.text}
+            </div>
+            <button class="delete-btn" onclick="deleteTask('${t.id}')">×</button>
+          </div>
+        `).join('');
+      });
+
+      const total = store.tasks.length;
+      const done = store.tasks.filter(t => t.completed).length;
+      document.getElementById('footer').textContent = `共 ${total} 个任务 · 已完成 ${done} 个 | 双击任务文字可修改内容`;
+    }
+
+    // --- 拖拽初始化 ---
+    function initSortable() {
+      document.querySelectorAll('.task-list').forEach(el => {
+        new Sortable(el, {
+          group: 'tasks',
+          animation: 150,
+          onEnd: (evt) => {
+            const taskId = evt.item.dataset.id;
+            const newQ = evt.to.id.replace('list-', '');
+            const task = store.tasks.find(t => t.id === taskId);
+            if (task) {
+              task.quadrant = newQ;
+              saveStore();
+              render();
+            }
+          }
+        });
+      });
+    }
+
+    // 键盘监听
+    document.getElementById('taskInput').onkeypress = (e) => { if(e.key === 'Enter') addTask(); };
+
+    window.onload = () => { render(); initSortable(); };
+  </script>
+</body>
+</html>
